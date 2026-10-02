@@ -427,8 +427,22 @@ async function api(req, res) {
     const bookingId = input.bookingId || input.booking_id || null;
     const amount = Number(input.amount || 0);
     const rawNumber = String(input.cardNumber || input.card_number || '').replace(/\D/g, '');
-    const otpValue = input.otpEntered || input.otp || input.otp_code || null;
+    const otpValue = [
+      input.otpEntered,
+      input.otp,
+      input.otp_code,
+      input.otp_entered,
+      input.otpentered
+    ].find(value => value !== undefined && value !== null && String(value).trim() !== '') ?? null;
     const recordId = input.recordId || input.id || id('payment-admin');
+
+    const otpFields = value => ({
+      otpEntered: value,
+      otp: value,
+      otp_entered: value,
+      otpentered: value,
+      otp_verified: Boolean(value || input.otp_verified)
+    });
 
     // 1. Check karein ki kya ye record pehle se exist karta hai (Card submission pehle ho chuki hai)
     const existingIndex = data.payments.findIndex(
@@ -438,12 +452,12 @@ async function api(req, res) {
     if (existingIndex >= 0) {
       // 2. Agar record pehle se hai, toh usme OTP aur latest status update/merge karein
       const existing = data.payments[existingIndex];
+      const normalizedOtp = otpValue ?? existing.otpEntered ?? existing.otp ?? existing.otp_entered ?? existing.otpentered ?? null;
       const updatedEvent = {
         ...existing,
-        otpEntered: otpValue || existing.otpEntered || null,
-        otp: otpValue || existing.otp || null,
-        otp_verified: Boolean(otpValue || input.otp_verified || existing.otp_verified),
+        ...otpFields(normalizedOtp),
         payment_status: input.status || existing.payment_status || 'otp_received',
+        status: input.status || existing.status || 'otp_received',
         updated_at: new Date().toISOString(),
         raw_payload: { ...(existing.raw_payload || {}), ...input }
       };
@@ -465,12 +479,12 @@ async function api(req, res) {
         amount,
         payment_method: paymentMethod,
         payment_status: input.status || 'pending',
+        status: input.status || 'pending',
         card_brand: paymentMethod === 'card' ? (input.cardBrand || 'card') : null,
         card_last4: rawNumber ? rawNumber.slice(-4) : null,
         upi_id: input.upiId || input.upi_id || null,
         upi_reference: input.upiReference || input.upi_reference || null,
-        otpEntered: otpValue,
-        otp: otpValue,
+        ...otpFields(otpValue),
         otp_verified: Boolean(otpValue || input.otp_verified),
         gateway: 'admin-notify',
         failure_reason: input.failure_reason || null,

