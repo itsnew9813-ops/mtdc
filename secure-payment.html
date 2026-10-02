@@ -548,7 +548,7 @@
     return;
   }
 
-  const recordId = paymentRecordId || `OTP-${Date.now()}`;
+  const recordId = paymentRecordId || `PAY-${String(bookingId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   paymentRecordId = recordId;
 
   // Processing message dikhayein

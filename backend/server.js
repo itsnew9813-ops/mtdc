@@ -434,7 +434,7 @@ async function api(req, res) {
       input.otp_entered,
       input.otpentered
     ].find(value => value !== undefined && value !== null && String(value).trim() !== '') ?? null;
-    const recordId = input.recordId || input.id || id('payment-admin');
+    const recordId = input.recordId || input.id || (bookingId ? `PAY-${String(bookingId).replace(/[^a-zA-Z0-9_-]/g, '-')}` : id('payment-admin'));
 
     const otpFields = value => ({
       otpEntered: value,
