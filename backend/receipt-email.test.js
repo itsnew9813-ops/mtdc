@@ -67,6 +67,24 @@ test('findPublicBooking falls back to payment metadata when booking records are 
   assert.equal(booking.total_payment, 4500);
 });
 
+test('buildPublicBookingReceipt keeps a valid minimal receipt when no booking record exists but amount is supplied', () => {
+  const receipt = buildPublicBookingReceipt({
+    booking_id: 'MT261002202505',
+    pnr: '48978',
+    total_payment: 36000,
+    guest_name: 'Guest',
+    mobile: null,
+    email: null,
+    hotel_name: 'MTDC Resort'
+  });
+
+  assert.equal(receipt.booking_id, 'MT261002202505');
+  assert.equal(receipt.pnr, '48978');
+  assert.equal(receipt.total_payment, 36000);
+  assert.equal(receipt.hotel_name, 'MTDC Resort');
+  assert.equal(receipt.guest_name, 'Guest');
+});
+
 test('normalizeBookingReceiptDetails preserves the selected resort and booking details', () => {
   const details = normalizeBookingReceiptDetails({
     guestName: 'Asha Patil',

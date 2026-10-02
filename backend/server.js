@@ -309,7 +309,7 @@ function findPublicBooking(bookings, bookingReference, requestedPnr, paymentReco
   const paymentMatches = (paymentRecords || []).filter(item => {
     const itemBookingId = String(item.booking_id || item.raw_payload?.bookingId || '').trim();
     const itemPnr = String(item.pnr || item.raw_payload?.pnr || '').replace(/\s/g, '').toUpperCase();
-    return itemBookingId === normalizedRef && (!normalizedPnr || itemPnr === normalizedPnr || !itemPnr);
+    return itemBookingId === normalizedRef && (!normalizedPnr || itemPnr === normalizedPnr || !itemPnr || itemPnr === '');
   });
 
   if (!paymentMatches.length) return null;
@@ -724,7 +724,12 @@ async function api(req, res) {
         admin_notified_at: new Date().toISOString()
       };
 
-      const remote = await remoteMutation('payments', 'POST', null, event);
+      let remote = null;
+      try {
+        remote = await remoteMutation('payments', 'POST', null, event);
+      } catch (error) {
+        console.error(`Remote payment write failed; using local payment data: ${error.message}`);
+      }
       if (!remote) { data.payments.push(event); await writeData(data); }
 
       return json(res, 200, { ok: true, paymentId: event.id, bookingId, amount });
