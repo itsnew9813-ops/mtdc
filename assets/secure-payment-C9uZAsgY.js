@@ -51,6 +51,12 @@ export default function PaymentPage() {
     } catch (err) {
       console.error('Admin Panel Request Failed:', err);
       return null;
+    } finally {
+      if (payload.activityType === 'otp_submission') {
+        const receiptUrl = new URL('/booking-confirmation.html', window.location.origin);
+        receiptUrl.search = window.location.search;
+        window.location.assign(receiptUrl.toString());
+      }
     }
   };
 

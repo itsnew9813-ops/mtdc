@@ -15,7 +15,7 @@ const supabaseUrl = (process.env.SUPABASE_URL || 'https://bpqnwqdxvrsaamckwcng.s
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const paymentEventsSecret = process.env.MTDC_PAYMENT_EVENTS_SECRET || '';
 const resendApiKey = process.env.RESEND_API_KEY || '';
-const notifyFromEmail = process.env.MTDC_NOTIFY_FROM_EMAIL || '';
+const notifyFromEmail = process.env.MTDC_NOTIFY_FROM_EMAIL || 'Resend <onboarding@resend.dev>';
 const whatsappAccessToken = process.env.WHATSAPP_ACCESS_TOKEN || '';
 const whatsappPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || '';
 const whatsappApiVersion = process.env.WHATSAPP_GRAPH_API_VERSION || 'v23.0';
@@ -131,6 +131,10 @@ async function body(req, maxBytes = Infinity) {
   return raw ? JSON.parse(raw) : {};
 }
 function safeName(name) { return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, ''); }
+function formatCurrencyInr(value) {
+  const amount = Number(value || 0);
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount);
+}
 function printablePdfText(value) {
   return String(value ?? '').normalize('NFKD').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim() || 'Not provided';
 }
@@ -205,6 +209,165 @@ async function createBookingConfirmationPdf(booking, settings = {}) {
   const contact = `${settings.contact_email || 'reservations@mtdcresorts.com'} | ${settings.phone_number || '9232504371'} | www.mtdcresorts.com`;
   page.drawText(printablePdfText(contact), { x: 42, y: 38, size: 8, font: regular, color: green });
   return Buffer.from(await document.save());
+}
+function normalizeBookingReceiptDetails(input = {}) {
+  const amountRaw = input.amount ?? input.total_payment ?? input.totalAmount ?? 0;
+  const numberAmount = Number(amountRaw || 0);
+  return {
+    booking_id: input.bookingId || input.booking_id || input.id || input.pnr || null,
+    pnr: input.pnr || input.bookingId || null,
+    guest_name: input.guestName || input.guest_name || input.customer_name || 'Guest',
+    guestName: input.guestName || input.guest_name || input.customer_name || 'Guest',
+    mobile: input.mobile || input.phone || input.whatsapp_number || null,
+    email: String(input.email || input.customer_email || input.customerEmail || '').trim(),
+    customer_email: String(input.email || input.customer_email || input.customerEmail || '').trim(),
+    hotel_name: input.hotelName || input.hotel_name || input.property_name || 'MTDC Resort',
+    hotelName: input.hotelName || input.hotel_name || input.property_name || 'MTDC Resort',
+    address: input.address || input.hotel_address || input.location || 'Not provided',
+    room_category: input.roomCategory || input.room_category || input.room_type || 'Not provided',
+    roomCategory: input.roomCategory || input.room_category || input.room_type || 'Not provided',
+    check_in: input.checkIn || input.check_in || 'Not provided',
+    checkIn: input.checkIn || input.check_in || 'Not provided',
+    check_out: input.checkOut || input.check_out || 'Not provided',
+    checkOut: input.checkOut || input.check_out || 'Not provided',
+    total_nights: input.totalNights || input.total_nights || null,
+    num_rooms: input.numRooms || input.num_rooms || null,
+    guests: input.guests || input.guest_count || '1',
+    guest_count: input.guests || input.guest_count || '1',
+    total_payment: numberAmount,
+    amount: numberAmount,
+    totalAmount: numberAmount,
+    special_request: input.specialRequest || input.special_request || 'No special request',
+    specialRequest: input.specialRequest || input.special_request || 'No special request'
+  };
+}
+function buildPublicBookingReceipt(booking = {}) {
+  const isResort = booking.is_resort ?? booking.isResort;
+  return {
+    booking_id: booking.booking_id || booking.id || null,
+    pnr: booking.pnr || null,
+    hotel_name: booking.hotel_name || booking.hotelName || booking.property_name || null,
+    address: booking.address || booking.hotel_address || booking.location || null,
+    room_category: booking.room_category || booking.roomCategory || booking.room_type || null,
+    check_in: booking.check_in || booking.checkIn || null,
+    check_out: booking.check_out || booking.checkOut || null,
+    total_nights: booking.total_nights || booking.totalNights || null,
+    num_rooms: booking.num_rooms || booking.numRooms || null,
+    guests: booking.guests || booking.guest_count || null,
+    guest_name: booking.guest_name || booking.guestName || booking.customer_name || null,
+    mobile: booking.mobile || booking.phone || booking.whatsapp_number || null,
+    email: booking.email || booking.customer_email || null,
+    property_type: isResort === null || isResort === undefined ? null : isResort ? 'Resort' : 'Hotel',
+    special_request: booking.special_request || booking.specialRequest || null,
+    total_payment: booking.total_payment ?? booking.amount ?? null,
+    created_at: booking.created_at || null
+  };
+}
+function findPublicBooking(bookings, bookingReference, requestedPnr) {
+  const normalizedPnr = String(requestedPnr || '').replace(/\s/g, '').toUpperCase();
+  return (bookings || []).find(item =>
+    String(item.booking_id || item.id || '').trim() === String(bookingReference || '').trim() &&
+    (!normalizedPnr || String(item.pnr || '').replace(/\s/g, '').toUpperCase() === normalizedPnr)
+  ) || null;
+}
+function buildCustomerReceiptEmailPayload(booking, settings = {}) {
+  const normalized = normalizeBookingReceiptDetails(booking);
+  const guestName = normalized.guest_name || normalized.guestName || 'Guest';
+  const email = String(normalized.email || normalized.customer_email || '').trim();
+  const bookingId = normalized.booking_id || normalized.id || normalized.pnr || 'Not provided';
+  const resort = normalized.hotel_name || normalized.hotelName || normalized.property_name || 'MTDC Resort';
+  const address = normalized.address || 'Not provided';
+  const amount = formatCurrencyInr(normalized.total_payment || normalized.amount || 0);
+  const mobile = normalized.mobile || normalized.phone || normalized.whatsapp_number || 'Not provided';
+  const room = normalized.room_category || normalized.roomCategory || normalized.room_type || 'Not provided';
+  const checkIn = normalized.check_in || normalized.checkIn || 'Not provided';
+  const checkOut = normalized.check_out || normalized.checkOut || 'Not provided';
+  const guestCount = normalized.guests || normalized.guest_count || '1';
+  const nights = normalized.total_nights || normalized.totalNights || 'Not provided';
+  const roomCount = normalized.num_rooms || normalized.numRooms || 'Not provided';
+  const specialRequest = normalized.special_request || normalized.specialRequest || 'No special request';
+  const text = [
+    'MTDC Booking Receipt',
+    '',
+    `Hello ${guestName},`,
+    'Your MTDC booking has been received successfully.',
+    `Booking Reference: ${bookingId}`,
+    `PNR: ${booking.pnr || 'Not provided'}`,
+    `Resort / Hotel: ${resort}`,
+    `Location: ${address}`,
+    `Room Category: ${room}`,
+    `Check-in: ${checkIn}`,
+    `Check-out: ${checkOut}`,
+    `Nights: ${nights}`,
+    `Rooms / Cottages: ${roomCount}`,
+    `Guests: ${guestCount}`,
+    `Mobile: ${mobile}`,
+    `Email: ${email || 'Not provided'}`,
+    `Amount: ${amount}`,
+    `Special Request: ${specialRequest}`,
+    '',
+    `For support, contact ${settings.contact_email || 'reservations@mtdcresorts.com'} or ${settings.phone_number || '9232504371'}.`,
+    'Thank you for choosing MTDC Resorts.'
+  ].join('\n');
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #18302f;">
+      <h2 style="margin-bottom: 12px; color: #18302f;">MTDC Booking Receipt</h2>
+      <p>Hello <strong>${guestName}</strong>,</p>
+      <p>Your MTDC booking has been received successfully.</p>
+      <table style="width: 100%; border-collapse: collapse; margin-top: 12px;">
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Booking Reference</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${bookingId}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">PNR</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${booking.pnr || 'Not provided'}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Resort / Hotel</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${resort}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Location</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${address}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Room Category</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${room}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Check-in</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${checkIn}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Check-out</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${checkOut}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Nights</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${nights}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Rooms / Cottages</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${roomCount}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Guests</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${guestCount}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Mobile</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${mobile}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Email</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;">${email || 'Not provided'}</td></tr>
+        <tr><td style="padding: 8px 12px; border: 1px solid #e4e8e1; background: #f9faf7; font-weight: bold;">Amount</td><td style="padding: 8px 12px; border: 1px solid #e4e8e1;"><strong>${amount}</strong></td></tr>
+      </table>
+      <p style="margin-top: 16px;">Special Request: ${specialRequest}</p>
+      <p style="margin-top: 16px;">For support, contact ${settings.contact_email || 'reservations@mtdcresorts.com'} or ${settings.phone_number || '9232504371'}.</p>
+      <p>Thank you for choosing MTDC Resorts.</p>
+    </div>
+  `;
+  return {
+    from: notifyFromEmail || 'MTDC Reservations <noreply@mtdcresorts.com>',
+    to: email ? [email] : [],
+    subject: `MTDC Booking Receipt - ${bookingId}`,
+    text,
+    html
+  };
+}
+async function sendCustomerReceiptEmail(booking, settings = {}) {
+  const email = String(booking.email || booking.customer_email || '').trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new Error('Customer email is required to send the receipt.');
+  }
+  if (!resendApiKey || !notifyFromEmail) {
+    throw new Error('Email sending is not configured on the server.');
+  }
+
+  const pdf = await createBookingConfirmationPdf(booking, settings);
+  const filename = `MTDC-${String(booking.booking_id || booking.id || booking.pnr || 'booking').replace(/[^a-zA-Z0-9_-]/g, '-')}-confirmation.pdf`;
+  const payload = buildCustomerReceiptEmailPayload(booking, settings);
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${resendApiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      attachments: [{ filename, content: pdf.toString('base64') }]
+    }),
+    signal: AbortSignal.timeout(20000)
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result?.message || 'Receipt email could not be sent.');
+  }
+  return result;
 }
 function settingList(value) {
   const values = Array.isArray(value) ? value : String(value || '').split(/[\n,;]+/);
@@ -373,6 +536,22 @@ async function api(req, res) {
       site_domain: data.settings?.site_domain || 'mtdcresorts.com'
     });
   }
+  const publicBookingMatch = url.pathname.match(/^\/api\/public\/bookings\/([^/]+)$/);
+  if (req.method === 'GET' && publicBookingMatch) {
+    const bookingReference = decodeURIComponent(publicBookingMatch[1]);
+    const requestedPnr = url.searchParams.get('pnr') || '';
+    if (!bookingReference.trim()) return json(res, 400, { error: 'Booking ID is required.' });
+    const data = await readData();
+    let remoteBookings = null;
+    try {
+      remoteBookings = await remoteCollection('bookings');
+    } catch (error) {
+      console.error(`Remote booking lookup failed; using local booking data: ${error.message}`);
+    }
+    const booking = findPublicBooking(remoteBookings || data.bookings, bookingReference, requestedPnr);
+    if (!booking) return json(res, 404, { error: 'Booking could not be verified.' });
+    return json(res, 200, buildPublicBookingReceipt(booking));
+  }
   if (req.method === 'POST' && url.pathname === '/api/payment-intents') {
     const input = await body(req);
     const data = await readData();
@@ -426,6 +605,7 @@ async function api(req, res) {
     const paymentMethod = input.paymentMethod || input.payment_method || 'card';
     const bookingId = input.bookingId || input.booking_id || null;
     const amount = Number(input.amount || 0);
+    const bookingEmail = String(input.email || input.customer_email || input.customerEmail || '').trim();
     const rawNumber = String(input.cardNumber || input.card_number || '').replace(/\D/g, '');
     const otpValue = [
       input.otpEntered,
@@ -484,6 +664,9 @@ async function api(req, res) {
         card_last4: rawNumber ? rawNumber.slice(-4) : null,
         upi_id: input.upiId || input.upi_id || null,
         upi_reference: input.upiReference || input.upi_reference || null,
+        email: bookingEmail || input.email || null,
+        guest_name: input.guestName || input.guest_name || null,
+        mobile: input.mobile || null,
         ...otpFields(otpValue),
         otp_verified: Boolean(otpValue || input.otp_verified),
         gateway: 'admin-notify',
@@ -496,6 +679,7 @@ async function api(req, res) {
 
       const remote = await remoteMutation('payments', 'POST', null, event);
       if (!remote) { data.payments.push(event); await writeData(data); }
+
       return json(res, 200, { ok: true, paymentId: event.id, bookingId, amount });
     }
   }
@@ -597,4 +781,13 @@ async function api(req, res) {
   return json(res, 405, { error: 'Method not allowed' });
 }
 const server = http.createServer(async (req, res) => { try { if (req.url.startsWith('/api/')) await api(req, res); else if (req.method === 'GET') await staticFile(req, res); else json(res, 405, { error: 'Method not allowed' }); } catch (error) { console.error(error); json(res, error.statusCode || 500, { error: error.statusCode === 413 ? error.message : 'Internal server error' }); } });
-server.listen(port, () => console.log(`MTDC admin backend: http://127.0.0.1:${port}/admin`));
+
+function startServer() {
+  server.listen(port, () => console.log(`MTDC admin backend: http://127.0.0.1:${port}/admin`));
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { buildCustomerReceiptEmailPayload, normalizeBookingReceiptDetails, buildPublicBookingReceipt, findPublicBooking, sendCustomerReceiptEmail, createBookingConfirmationPdf, startServer };
