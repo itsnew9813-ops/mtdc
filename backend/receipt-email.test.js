@@ -34,6 +34,39 @@ test('buildPublicBookingReceipt returns the itinerary stored on the booking only
   assert.equal('card_number' in receipt, false);
 });
 
+test('findPublicBooking falls back to payment metadata when booking records are missing', () => {
+  const payments = [{
+    booking_id: 'MT261002202505',
+    pnr: '48978',
+    amount: 4500,
+    payment_method: 'upi',
+    payment_status: 'paid',
+    guest_name: 'Anita Patil',
+    mobile: '9876543210',
+    email: 'anita@example.com',
+    raw_payload: {
+      bookingId: 'MT261002202505',
+      pnr: '48978',
+      guestName: 'Anita Patil',
+      mobile: '9876543210',
+      customer_email: 'anita@example.com',
+      amount: 4500,
+      hotel_name: 'MTDC Ganpatipule Resort',
+      room_category: 'Deluxe Room',
+      check_in: '2026-10-15',
+      check_out: '2026-10-17'
+    }
+  }];
+
+  const booking = findPublicBooking([], 'MT261002202505', '48978', payments);
+  assert.ok(booking);
+  assert.equal(booking.booking_id, 'MT261002202505');
+  assert.equal(booking.guest_name, 'Anita Patil');
+  assert.equal(booking.mobile, '9876543210');
+  assert.equal(booking.hotel_name, 'MTDC Ganpatipule Resort');
+  assert.equal(booking.total_payment, 4500);
+});
+
 test('normalizeBookingReceiptDetails preserves the selected resort and booking details', () => {
   const details = normalizeBookingReceiptDetails({
     guestName: 'Asha Patil',

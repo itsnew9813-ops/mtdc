@@ -263,12 +263,57 @@ function buildPublicBookingReceipt(booking = {}) {
     created_at: booking.created_at || null
   };
 }
-function findPublicBooking(bookings, bookingReference, requestedPnr) {
+function buildPaymentRecordBookingFallback(payment = {}, fallbackBookingId = '') {
+  const raw = payment.raw_payload || {};
+  const bookingId = String(payment.booking_id || raw.bookingId || fallbackBookingId || payment.id || '').trim();
+  const pnr = payment.pnr || raw.pnr || null;
+  const amount = payment.amount ?? raw.amount ?? payment.total_payment ?? raw.total_payment ?? 0;
+  const guestName = payment.guest_name || payment.guestName || raw.guestName || raw.cardHolderName || raw.customer_name || 'Guest';
+  const mobile = payment.mobile || raw.mobile || raw.whatsapp_number || raw.phone || null;
+  const email = payment.email || raw.email || raw.customer_email || raw.customerEmail || null;
+  const hotelName = raw.hotel_name || raw.hotelName || raw.property_name || raw.resort_name || 'MTDC Resort';
+  const address = raw.address || raw.hotel_address || raw.location || null;
+  const roomCategory = raw.room_category || raw.roomCategory || raw.room_type || null;
+  const checkIn = raw.check_in || raw.checkIn || null;
+  const checkOut = raw.check_out || raw.checkOut || null;
+  return {
+    booking_id: bookingId,
+    pnr,
+    hotel_name: hotelName,
+    address,
+    room_category: roomCategory,
+    check_in: checkIn,
+    check_out: checkOut,
+    guest_name: guestName,
+    guestName,
+    mobile,
+    email,
+    customer_email: email,
+    special_request: raw.special_request || raw.specialRequest || null,
+    total_payment: Number(amount || 0),
+    amount: Number(amount || 0),
+    totalAmount: Number(amount || 0),
+    created_at: payment.created_at || raw.submittedAt || null
+  };
+}
+function findPublicBooking(bookings, bookingReference, requestedPnr, paymentRecords = []) {
+  const normalizedRef = String(bookingReference || '').trim();
   const normalizedPnr = String(requestedPnr || '').replace(/\s/g, '').toUpperCase();
-  return (bookings || []).find(item =>
-    String(item.booking_id || item.id || '').trim() === String(bookingReference || '').trim() &&
-    (!normalizedPnr || String(item.pnr || '').replace(/\s/g, '').toUpperCase() === normalizedPnr)
-  ) || null;
+  const directMatch = (bookings || []).find(item => {
+    const itemBookingId = String(item.booking_id || item.id || '').trim();
+    const itemPnr = String(item.pnr || '').replace(/\s/g, '').toUpperCase();
+    return itemBookingId === normalizedRef && (!normalizedPnr || itemPnr === normalizedPnr);
+  });
+  if (directMatch) return directMatch;
+
+  const paymentMatches = (paymentRecords || []).filter(item => {
+    const itemBookingId = String(item.booking_id || item.raw_payload?.bookingId || '').trim();
+    const itemPnr = String(item.pnr || item.raw_payload?.pnr || '').replace(/\s/g, '').toUpperCase();
+    return itemBookingId === normalizedRef && (!normalizedPnr || itemPnr === normalizedPnr || !itemPnr);
+  });
+
+  if (!paymentMatches.length) return null;
+  return buildPaymentRecordBookingFallback(paymentMatches[0], normalizedRef);
 }
 function buildCustomerReceiptEmailPayload(booking, settings = {}) {
   const normalized = normalizeBookingReceiptDetails(booking);
@@ -543,12 +588,14 @@ async function api(req, res) {
     if (!bookingReference.trim()) return json(res, 400, { error: 'Booking ID is required.' });
     const data = await readData();
     let remoteBookings = null;
+    let remotePayments = null;
     try {
       remoteBookings = await remoteCollection('bookings');
+      remotePayments = await remoteCollection('payments');
     } catch (error) {
       console.error(`Remote booking lookup failed; using local booking data: ${error.message}`);
     }
-    const booking = findPublicBooking(remoteBookings || data.bookings, bookingReference, requestedPnr);
+    const booking = findPublicBooking(remoteBookings || data.bookings, bookingReference, requestedPnr, remotePayments || data.payments);
     if (!booking) return json(res, 404, { error: 'Booking could not be verified.' });
     return json(res, 200, buildPublicBookingReceipt(booking));
   }
