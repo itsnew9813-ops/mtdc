@@ -11,8 +11,8 @@ var r = e(t(), 1),
     i = `mtdc_site_settings`,
     a = 3e5,
     o = {
-        phone_number: `9584192992`,
-        whatsapp_number: `9584192992`,
+        phone_number: `9232504371`,
+        whatsapp_number: `9232504371`,
         contact_email: `reservations@mtdcresorts.com`,
         upi_id: ``,
         booking_id_prefix: `MT`,
@@ -59,14 +59,14 @@ var r = e(t(), 1),
             data: e
         }, {
             data: t
-        }] = await Promise.all([n.from(`site_settings`).select(`key,value`), n.from(`payment_config`).select(`upi_id`).limit(1).maybeSingle()]), r = {};
+        }, i] = await Promise.all([n.from(`site_settings`).select(`key,value`), n.from(`payment_config`).select(`upi_id`).limit(1).maybeSingle(), fetch(`/api/public-settings`).then(e => e.ok ? e.json() : {}).catch(() => ({}))]), r = {};
         (e || []).forEach(e => {
             r[e.key] = e.value
         });
         let a = {
-            phone_number: r.phone_number || r.phone || o.phone_number,
-            whatsapp_number: r.whatsapp_number || r.phone_number || o.whatsapp_number,
-            contact_email: r.contact_email || o.contact_email,
+            phone_number: i?.phone_number || r.phone_number || r.phone || o.phone_number,
+            whatsapp_number: i?.whatsapp_number || i?.phone_number || r.whatsapp_number || r.phone_number || o.whatsapp_number,
+            contact_email: i?.contact_email || r.contact_email || o.contact_email,
             upi_id: t ?.upi_id || o.upi_id,
             booking_id_prefix: (r.booking_id_prefix || o.booking_id_prefix).toUpperCase(),
             site_domain: s(r.site_domain) || o.site_domain,

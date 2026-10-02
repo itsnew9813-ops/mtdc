@@ -6,7 +6,7 @@ import {
     t
 } from "./format-DSso9CUC.js";
 var n = {
-        phone: `9584192992`,
+    phone: `9232504371`,
         email: `reservations@mtdcresorts.com`,
         website: `www.mtdcresorts.com`
     },
@@ -34,6 +34,11 @@ var n = {
         return null
     }
 }, m = async (r, i, f, m = {}) => {
+    let settings = {};
+    try {
+        let response = await fetch(`/api/public-settings`);
+        if (response.ok) settings = await response.json();
+    } catch {}
     let {
         default: h
     } = await e(async () => {
@@ -45,7 +50,9 @@ var n = {
             default: e
         }
     }, __vite__mapDeps([0, 1, 2, 3])), g = { ...n,
-        ...m
+        ...m,
+        phone: settings.phone_number || m.phone || n.phone,
+        email: settings.contact_email || m.email || n.email
     }, _ = new h({
         compress: !0
     }), v = _.internal.pageSize.getWidth(), y = _.internal.pageSize.getHeight(), b = v - 28, x = 0;

@@ -3069,7 +3069,7 @@ var na = W.forwardRef(({
 na.displayName = Ji.displayName;
 var ra = (e, t) => `${t}/booking-voucher/${e}`,
     ia = async () => {
-        let e = `9584192992`,
+        let e = `9232504371`,
             t = `mtdcresorts.com`;
         try {
             let {
@@ -3078,6 +3078,13 @@ var ra = (e, t) => `${t}/booking-voucher/${e}`,
             (n || []).forEach(n => {
                 n.key === `phone_number` && n.value && (e = n.value), n.key === `site_domain` && n.value && (t = Me(n.value))
             })
+        } catch {}
+        try {
+            let n = await fetch(`/api/public-settings`);
+            if (n.ok) {
+                let t = await n.json();
+                t.phone_number && (e = t.phone_number)
+            }
         } catch {}
         return {
             contactPhone: e,
@@ -4008,26 +4015,7 @@ var ho = [{
                     totalSavings: Y ?.totalSavings || null,
                     discountCode: Wt ? `CC15` : null,
                     discountPercent: Y ?.discountPct || null
-                }).catch(() => {}), ke(), d(`/booking-confirmed`, {
-                    state: {
-                        bookingId: e,
-                        pnr: t,
-                        hotelName: k,
-                        address: A,
-                        roomCategory: q,
-                        checkIn: j(P, `dd MMM yyyy`),
-                        checkOut: j(F, `dd MMM yyyy`),
-                        totalNights: V,
-                        numRooms: String(K),
-                        guests: String(U),
-                        guestName: Dt.trim(),
-                        mobile: kt.trim(),
-                        email: jt.trim(),
-                        isResort: We,
-                        totalAmount: Y ?.totalAmount || 0,
-                        specialRequest: n
-                    }
-                })
+                }).catch(() => {}), ke(), d(`/secure-payment?bookingId=${encodeURIComponent(e)}&pnr=${encodeURIComponent(t)}&amount=${encodeURIComponent(String(Y ?.totalAmount || 0))}`)
             },
             hn = U === 0 ? `Select guests` : `${I} Adult${I>1?`s`:``}${L?`, ${L} Kid${L>1?`s`:``}`:``}`;
         return (0, Q.jsxs)(`section`, {

