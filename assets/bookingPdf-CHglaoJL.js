@@ -6,8 +6,8 @@ import {
     t
 } from "./format-DSso9CUC.js";
 var n = {
-    phone: `9232504371`,
-        email: `reservations@mtdcresorts.com`,
+    phone: `9992104013`,
+        email: `resortsmtdc@gmail.com`,
         website: `www.mtdcresorts.com`
     },
     r = (e, n) => {

@@ -220,7 +220,7 @@ var m = e(t(), 1),
                 logo: `https://www.mtdcresorts.com/images/mtdc-logo.png`,
                 description: `Maharashtra Unlimited — the official MTDC resort network. Book beach resorts on the Konkan coast, Sahyadri hill retreats, Ajanta & Ellora heritage stays, wildlife lodges at Tadoba and Pench, and pilgrimage stays at Shirdi. Government tariff, book direct.`,
                 telephone: `+911800-309-9050`,
-                email: `reservations@mtdcresorts.com`,
+                email: `resortsmtdc@gmail.com`,
                 numberOfRooms: 1200
             }
         }), (0, h.jsx)(d, {

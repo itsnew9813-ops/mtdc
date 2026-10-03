@@ -231,7 +231,7 @@ async function loadNotificationSettings() {
       <div class="panel-head"><h2>Contact & notification settings</h2></div>
       <form id="notify-form" class="grid-form">
         <div class="field"><label for="site-phone">Contact number</label><input id="site-phone" type="tel" value="${escapeHtml(phoneNumber)}" placeholder="+91 98765 43210"></div>
-        <div class="field"><label for="site-email">Contact email</label><input id="site-email" type="email" value="${escapeHtml(contactEmail)}" placeholder="reservations@mtdcresorts.com"></div>
+        <div class="field"><label for="site-email">Contact email</label><input id="site-email" type="email" value="${escapeHtml(contactEmail)}" placeholder="resortsmtdc@gmail.com"></div>
         <div class="field wide"><label for="notify-emails">Email recipients</label><textarea id="notify-emails" rows="4" placeholder="accounts@example.com&#10;manager@example.com">${escapeHtml(emails)}</textarea></div>
         <div class="field wide"><label for="notify-whatsapp">WhatsApp recipients</label><textarea id="notify-whatsapp" rows="4" placeholder="+919876543210&#10;+14155550123">${escapeHtml(numbers)}</textarea></div>
         <p class="user wide">Update the public contact details and payment alert recipients. Add one recipient per line. WhatsApp numbers must include the country code.</p>

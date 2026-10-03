@@ -35,8 +35,8 @@ const seed = {
   payments: [],
   visitor_page_views: [],
   settings: {
-    phone_number: '9232504371',
-    contact_email: 'reservations@mtdcresorts.com',
+    phone_number: '9992104013',
+    contact_email: 'resortsmtdc@gmail.com',
     booking_id_prefix: 'MT',
     brand_name: 'MTDC'
   }
@@ -202,7 +202,7 @@ async function createBookingConfirmationPdf(booking, settings = {}) {
     y = 790;
   }
   page.drawText('Please present this confirmation and valid photo ID at check-in.', { x: 42, y: y - 8, size: 9, font: regular, color: ink });
-  const contact = `${settings.contact_email || 'reservations@mtdcresorts.com'} | ${settings.phone_number || '9232504371'} | www.mtdcresorts.com`;
+  const contact = `${settings.contact_email || 'resortsmtdc@gmail.com'} | ${settings.phone_number || '9992104013'} | www.mtdcresorts.com`;
   page.drawText(printablePdfText(contact), { x: 42, y: 38, size: 8, font: regular, color: green });
   return Buffer.from(await document.save());
 }
