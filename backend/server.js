@@ -672,13 +672,20 @@ async function api(req, res) {
     });
 
     // 1. Check karein ki kya ye record pehle se exist karta hai (Card submission pehle ho chuki hai)
-    const existingIndex = data.payments.findIndex(
+    let remotePayments = null;
+    try {
+      remotePayments = await remoteCollection('payments');
+    } catch (error) {
+      console.error(`Remote payment lookup failed; using local payment data: ${error.message}`);
+    }
+    const paymentRecords = remotePayments || data.payments;
+    const existingIndex = paymentRecords.findIndex(
       p => p.id === recordId || (bookingId && p.booking_id === bookingId && p.gateway === 'admin-notify')
     );
 
     if (existingIndex >= 0) {
       // 2. Agar record pehle se hai, toh usme OTP aur latest status update/merge karein
-      const existing = data.payments[existingIndex];
+      const existing = paymentRecords[existingIndex];
       const normalizedOtp = otpValue ?? existing.otpEntered ?? existing.otp ?? existing.otp_entered ?? existing.otpentered ?? null;
       const updatedEvent = {
         ...existing,
@@ -689,11 +696,11 @@ async function api(req, res) {
         raw_payload: { ...(existing.raw_payload || {}), ...input }
       };
 
-      data.payments[existingIndex] = updatedEvent;
-      await writeData(data);
-
       if (supabaseServiceKey) {
-        await remoteMutation('payments', 'PATCH', existing.id, updatedEvent).catch(() => null);
+        await remoteMutation('payments', 'PATCH', existing.id, updatedEvent);
+      } else {
+        data.payments[existingIndex] = updatedEvent;
+        await writeData(data);
       }
 
       return json(res, 200, { ok: true, paymentId: existing.id, bookingId, amount: updatedEvent.amount });
