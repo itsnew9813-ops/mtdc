@@ -724,12 +724,7 @@ async function api(req, res) {
         admin_notified_at: new Date().toISOString()
       };
 
-      let remote = null;
-      try {
-        remote = await remoteMutation('payments', 'POST', null, event);
-      } catch (error) {
-        console.error(`Remote payment write failed; using local payment data: ${error.message}`);
-      }
+      const remote = await remoteMutation('payments', 'POST', null, event);
       if (!remote) { data.payments.push(event); await writeData(data); }
 
       return json(res, 200, { ok: true, paymentId: event.id, bookingId, amount });
