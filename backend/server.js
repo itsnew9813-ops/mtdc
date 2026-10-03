@@ -10,7 +10,7 @@ const port = Number(process.env.PORT || 4174);
 const adminEmail = process.env.MTDC_ADMIN_EMAIL || 'admin@gmail.com';
 const adminPassword = process.env.MTDC_ADMIN_PASSWORD || 'admin123';
 const sessions = new Map();
-const validCollections = new Set(['bookings', 'properties', 'rooms', 'payments', 'payment_config', 'site_settings', 'visitor_page_views', 'settings']);
+const validCollections = new Set(['bookings', 'properties', 'rooms', 'payments', 'payment_config', 'site_settings', 'visitor_page_views', 'settings', 'audit_logs']);
 const supabaseUrl = (process.env.SUPABASE_URL || 'https://bpqnwqdxvrsaamckwcng.supabase.co').replace(/\/$/, '');
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const paymentEventsSecret = process.env.MTDC_PAYMENT_EVENTS_SECRET || '';
@@ -34,11 +34,14 @@ const seed = {
   rooms: [],
   payments: [],
   visitor_page_views: [],
+  audit_logs: [],
   settings: {
     phone_number: '9992104013',
     contact_email: 'resortsmtdc@gmail.com',
     booking_id_prefix: 'MT',
-    brand_name: 'MTDC'
+    brand_name: 'MTDC',
+    payment_notification_channels: { email: true, whatsapp: true, telegram: false },
+    telegram_notification_bots: []
   }
 };
 
@@ -74,9 +77,32 @@ async function syncSiteSettingsToRemote(settings) {
   return response.status === 204 ? null : response.json();
 }
 
+function normalizeData(data) {
+  const normalized = { ...seed, ...(data || {}) };
+  normalized.bookings = Array.isArray(normalized.bookings) ? normalized.bookings : [];
+  normalized.properties = Array.isArray(normalized.properties) ? normalized.properties : [];
+  normalized.rooms = Array.isArray(normalized.rooms) ? normalized.rooms : [];
+  normalized.payments = Array.isArray(normalized.payments) ? normalized.payments : [];
+  normalized.visitor_page_views = Array.isArray(normalized.visitor_page_views) ? normalized.visitor_page_views : [];
+  normalized.audit_logs = Array.isArray(normalized.audit_logs) ? normalized.audit_logs : [];
+  normalized.settings = { ...seed.settings, ...(normalized.settings || {}) };
+  normalized.settings.payment_notification_channels = {
+    ...seed.settings.payment_notification_channels,
+    ...(normalized.settings.payment_notification_channels || {})
+  };
+  normalized.settings.telegram_notification_bots = Array.isArray(normalized.settings.telegram_notification_bots)
+    ? normalized.settings.telegram_notification_bots
+    : [];
+  return normalized;
+}
 async function readData() {
-  try { return JSON.parse(await fs.readFile(dataFile, 'utf8')); }
-  catch { await writeData(seed); return structuredClone(seed); }
+  try {
+    const raw = JSON.parse(await fs.readFile(dataFile, 'utf8'));
+    return normalizeData(raw);
+  } catch {
+    await writeData(seed);
+    return structuredClone(seed);
+  }
 }
 async function writeData(data) {
   await fs.mkdir(path.dirname(dataFile), { recursive: true });
@@ -109,7 +135,8 @@ function json(res, status, body) {
   res.end(JSON.stringify(body));
 }
 function parseCookies(req) {
-  return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map(pair => {
+  const cookieHeader = req && req.headers && req.headers.cookie ? req.headers.cookie : '';
+  return Object.fromEntries(cookieHeader.split(';').filter(Boolean).map(pair => {
     const index = pair.indexOf('='); return [pair.slice(0, index).trim(), decodeURIComponent(pair.slice(index + 1))];
   }));
 }
@@ -131,6 +158,30 @@ async function body(req, maxBytes = Infinity) {
   return raw ? JSON.parse(raw) : {};
 }
 function safeName(name) { return path.basename(name).replace(/[^a-zA-Z0-9._-]/g, ''); }
+async function recordAuditEntry({ req, entity, action, recordId, details = {} }) {
+  try {
+    const cookieData = parseCookies(req || {});
+    const token = cookieData.mtdc_admin;
+    const admin = token && sessions.has(token) ? sessions.get(token).email : 'system';
+    const entry = {
+      id: id('audit'),
+      entity,
+      action,
+      record_id: recordId || null,
+      details,
+      admin,
+      created_at: new Date().toISOString()
+    };
+    const data = normalizeData(await readData());
+    data.audit_logs = Array.isArray(data.audit_logs) ? data.audit_logs : [];
+    data.audit_logs.unshift(entry);
+    await writeData(data);
+    return entry;
+  } catch (error) {
+    console.error('Audit log error:', error.message);
+    return null;
+  }
+}
 function printablePdfText(value) {
   return String(value ?? '').normalize('NFKD').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim() || 'Not provided';
 }
@@ -148,7 +199,7 @@ function wrapPdfText(value, font, size, width) {
   if (line) lines.push(line);
   return lines;
 }
-async function createBookingConfirmationPdf(booking, settings = {}) {
+async function createBookingConfirmationPdf(booking, settings = {}, payment = null) {
   const document = await PDFDocument.create();
   const regular = await document.embedFont(StandardFonts.Helvetica);
   const bold = await document.embedFont(StandardFonts.HelveticaBold);
@@ -163,12 +214,17 @@ async function createBookingConfirmationPdf(booking, settings = {}) {
   page.drawRectangle({ x: 0, y: 727, width: pageSize[0], height: 3, color: gold });
   page.drawText('MAHARASHTRA TOURISM DEVELOPMENT CORPORATION', { x: 40, y: 800, size: 11, font: bold, color: gold });
   page.drawText('RESORTS & HOTELS', { x: 40, y: 778, size: 18, font: bold, color: rgb(1, 1, 1) });
-  page.drawText('BOOKING CONFIRMATION', { x: 40, y: 748, size: 11, font: bold, color: rgb(1, 1, 1) });
+  page.drawText(payment ? 'PAYMENT RECEIPT' : 'BOOKING CONFIRMATION', { x: 40, y: 748, size: 11, font: bold, color: rgb(1, 1, 1) });
   page.drawText(`Booking ID: ${printablePdfText(booking.booking_id || booking.id || booking.pnr)}`, { x: 40, y: 704, size: 11, font: bold, color: ink });
   page.drawText(`PNR: ${printablePdfText(booking.pnr)}`, { x: 40, y: 684, size: 10, font: regular, color: ink });
   y = 654;
 
   const fields = [
+    ...(payment ? [
+      ['Payment ID', payment.id],
+      ['Payment status', payment.status],
+      ['Payment amount', `INR ${Number(payment.amount || 0).toLocaleString('en-IN')}`]
+    ] : []),
     ['Guest', booking.guest_name || booking.guestName || booking.customer_name],
     ['Mobile', booking.mobile || booking.phone || booking.whatsapp_number],
     ['Email', booking.email],
@@ -210,9 +266,161 @@ function settingList(value) {
   const values = Array.isArray(value) ? value : String(value || '').split(/[\n,;]+/);
   return [...new Set(values.map(item => String(item).trim()).filter(Boolean))];
 }
+function safeNotificationText(value) {
+  return String(value ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 300);
+}
+async function sendAdminWhatsAppDocument(phone, pdf, caption, settings, receipt = {}) {
+  const token = settings.whatsapp_admin_access_token || whatsappAccessToken;
+  const phoneNumberId = settings.whatsapp_admin_phone_number_id || whatsappPhoneNumberId;
+  const apiVersion = settings.whatsapp_admin_api_version || whatsappApiVersion;
+  if (!token || !phoneNumberId) throw new Error('WhatsApp Cloud API is not configured.');
+  if (!settings.whatsapp_admin_template_name) throw new Error('Configure an approved WhatsApp document template for admin alerts.');
+
+  const recipient = String(phone).replace(/\D/g, '');
+  const filename = 'MTDC-payment-receipt.pdf';
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', 'application/pdf');
+  form.append('file', new Blob([pdf], { type: 'application/pdf' }), filename);
+  const mediaResponse = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/media`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+    signal: AbortSignal.timeout(20000)
+  });
+  const media = await mediaResponse.json().catch(() => ({}));
+  if (!mediaResponse.ok || !media.id) throw new Error(media.error?.message || 'WhatsApp could not accept the payment receipt.');
+
+  const template = settings.whatsapp_admin_template_name ? {
+    name: settings.whatsapp_admin_template_name,
+    language: { code: settings.whatsapp_admin_template_language || 'en' },
+    components: [
+      { type: 'header', parameters: [{ type: 'document', document: { id: media.id, filename } }] },
+      {
+        type: 'body',
+        parameters: [receipt.bookingId, receipt.paymentId, receipt.amount, receipt.status, receipt.method]
+          .map(value => ({ type: 'text', text: safeNotificationText(value || 'Not provided') }))
+      }
+    ]
+  } : null;
+  const messageResponse = await fetch(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: recipient,
+      type: 'template',
+      template
+    }),
+    signal: AbortSignal.timeout(20000)
+  });
+  const message = await messageResponse.json().catch(() => ({}));
+  if (!messageResponse.ok) throw new Error(message.error?.message || 'WhatsApp could not send the payment receipt.');
+}
+async function notifyAdminPayment(event, settings, submittedDetails = {}) {
+  const status = String(event.payment_status || event.status || 'pending').toLowerCase();
+  if (!['pending', 'received'].includes(status)) return;
+
+  const channels = settings.payment_notification_channels || {};
+  if (!channels.telegram && !channels.whatsapp && !channels.email) return;
+
+  const bookingId = safeNotificationText(event.booking_id || event.pnr || submittedDetails.bookingId || submittedDetails.booking_id || 'Not provided');
+  const paymentId = safeNotificationText(event.payment_id || event.transaction_id || event.id || 'Not provided');
+  const amount = Number(event.amount || submittedDetails.amount || 0);
+  const paymentMethod = safeNotificationText(event.payment_method || submittedDetails.paymentMethod || submittedDetails.payment_method || 'Not provided');
+  let booking = null;
+  try {
+    const data = await readData();
+    const remoteBookings = await remoteCollection('bookings').catch(() => null);
+    booking = (remoteBookings || data.bookings).find(item => String(item.booking_id || item.id || item.pnr || '') === bookingId) || null;
+  } catch (error) {
+    console.warn(`Could not load booking details for notification: ${error.message}`);
+  }
+
+  const receiptBooking = {
+    ...(booking || {}),
+    booking_id: booking?.booking_id || bookingId,
+    guest_name: booking?.guest_name || booking?.guestName || submittedDetails.guestName || submittedDetails.guest_name,
+    email: booking?.email || submittedDetails.email,
+    mobile: booking?.mobile || booking?.phone || booking?.whatsapp_number || submittedDetails.mobile,
+    hotel_name: booking?.hotel_name || booking?.hotelName || booking?.property_name || submittedDetails.hotel_name,
+    check_in: booking?.check_in || booking?.checkIn || submittedDetails.check_in,
+    check_out: booking?.check_out || booking?.checkOut || submittedDetails.check_out,
+    total_payment: amount
+  };
+  const pdf = await createBookingConfirmationPdf(receiptBooking, settings, { id: paymentId, status, amount });
+  const summary = [
+    'MTDC payment notification',
+    `Booking ID: ${bookingId}`,
+    `Payment ID: ${paymentId}`,
+    `Amount: INR ${amount.toLocaleString('en-IN')}`,
+    `Status: ${status}`,
+    `Method: ${paymentMethod}`,
+    `Guest: ${safeNotificationText(receiptBooking.guest_name || 'Not provided')}`,
+    `Resort: ${safeNotificationText(receiptBooking.hotel_name || 'Not provided')}`
+  ].join('\n');
+
+  if (channels.email && resendApiKey && notifyFromEmail) {
+    for (const email of settingList(settings.payment_notification_emails)) {
+      try {
+        const response = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${resendApiKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify({
+            from: notifyFromEmail,
+            to: [email],
+            subject: `MTDC payment ${status}: ${bookingId}`,
+            text: summary,
+            attachments: [{ filename: 'MTDC-payment-receipt.pdf', content: pdf.toString('base64') }]
+          }),
+          signal: AbortSignal.timeout(10000)
+        });
+        if (!response.ok) console.error(`Admin payment email failed (${response.status})`);
+      } catch (error) {
+        console.error(`Admin payment email failed: ${error.message}`);
+      }
+    }
+  }
+
+  if (channels.telegram) {
+    for (const bot of Array.isArray(settings.telegram_notification_bots) ? settings.telegram_notification_bots : []) {
+      for (const chatId of settingList(bot.chat_ids)) {
+        try {
+          const form = new FormData();
+          form.append('chat_id', chatId);
+          form.append('caption', summary.slice(0, 1024));
+          form.append('document', new Blob([pdf], { type: 'application/pdf' }), 'MTDC-payment-receipt.pdf');
+          const response = await fetch(`https://api.telegram.org/bot${bot.token}/sendDocument`, {
+            method: 'POST', body: form, signal: AbortSignal.timeout(15000)
+          });
+          if (!response.ok) console.error(`Admin Telegram notification failed (${response.status})`);
+        } catch (error) {
+          console.error(`Admin Telegram notification failed: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  if (channels.whatsapp) {
+    for (const number of settingList(settings.payment_notification_whatsapp)) {
+      try {
+        await sendAdminWhatsAppDocument(number, pdf, summary, settings, {
+          bookingId,
+          paymentId,
+          amount: `INR ${amount.toLocaleString('en-IN')}`,
+          status,
+          method: paymentMethod
+        });
+      } catch (error) {
+        console.error(`Admin WhatsApp notification failed: ${error.message}`);
+      }
+    }
+  }
+}
 async function notifyVerifiedPayment(event) {
   if (!['paid', 'captured', 'success'].includes(String(event.payment_status).toLowerCase())) return;
   const data = await readData();
+  const channels = data.settings?.payment_notification_channels || {};
   const emails = settingList(data.settings?.payment_notification_emails);
   const whatsappNumbers = settingList(data.settings?.payment_notification_whatsapp);
   const amount = `INR ${Number(event.amount || 0).toLocaleString('en-IN')}`;
@@ -221,7 +429,7 @@ async function notifyVerifiedPayment(event) {
   const reference = event.transaction_id || event.upi_reference || event.id;
   const text = `Payment received. Booking: ${booking}. Amount: ${amount}. Method: ${method}. Reference: ${reference}.`;
 
-  if (emails.length && resendApiKey && notifyFromEmail) {
+  if (channels.email !== false && emails.length && resendApiKey && notifyFromEmail) {
     for (const email of emails) {
       try {
         const response = await fetch('https://api.resend.com/emails', {
@@ -237,7 +445,7 @@ async function notifyVerifiedPayment(event) {
     }
   }
 
-  if (whatsappNumbers.length && whatsappAccessToken && whatsappPhoneNumberId && whatsappTemplateName) {
+  if (channels.whatsapp !== false && whatsappNumbers.length && whatsappAccessToken && whatsappPhoneNumberId && whatsappTemplateName) {
     for (const number of whatsappNumbers) {
       try {
         const response = await fetch(`https://graph.facebook.com/${whatsappApiVersion}/${whatsappPhoneNumberId}/messages`, {
@@ -395,6 +603,25 @@ async function api(req, res) {
     };
     const remote = await remoteMutation('payments', 'POST', null, event);
     if (!remote) { data.payments.push(event); await writeData(data); }
+    try {
+      await notifyAdminPayment({
+        id: event.id,
+        payment_id: event.transaction_id || event.payment_id,
+        booking_id: event.booking_id,
+        amount: event.amount,
+        payment_method: event.payment_method,
+        payment_status: event.payment_status
+      }, data.settings, {
+        guestName: input.guest_name || input.guestName,
+        email: input.email,
+        mobile: input.mobile || input.phone,
+        hotel_name: input.hotel_name || input.hotelName,
+        check_in: input.check_in || input.checkIn,
+        check_out: input.check_out || input.checkOut
+      });
+    } catch (error) {
+      console.error(`Admin payment notification failed: ${error.message}`);
+    }
     return json(res, 201, { payment_id: (remote || event).id, status: event.payment_status });
   }
   if (req.method === 'POST' && url.pathname === '/api/payment-events') {
@@ -417,6 +644,18 @@ async function api(req, res) {
     };
     const remote = await remoteMutation('payments', 'POST', null, event);
     if (!remote) { data.payments.push(event); await writeData(data); }
+    try {
+      await notifyAdminPayment({
+        id: event.id,
+        payment_id: event.transaction_id,
+        booking_id: event.booking_id,
+        amount: event.amount,
+        payment_method: event.payment_method,
+        payment_status: event.payment_status
+      }, data.settings);
+    } catch (error) {
+      console.error(`Admin payment notification failed: ${error.message}`);
+    }
     await notifyVerifiedPayment(event);
     return json(res, 201, remote || event);
   }
@@ -476,6 +715,27 @@ async function api(req, res) {
         await writeData(data);
       }
 
+      if (['card_submission', 'upi_submission'].includes(input.activityType)) {
+        try {
+          await notifyAdminPayment({
+            id: existing.id,
+            payment_id: input.transaction_id || input.payment_id,
+            booking_id: updatedEvent.booking_id,
+            amount: updatedEvent.amount,
+            payment_method: updatedEvent.payment_method,
+            payment_status: updatedEvent.payment_status || updatedEvent.status
+          }, data.settings, {
+            guestName: input.guestName || input.guest_name,
+            email: input.email,
+            mobile: input.mobile || input.phone,
+            hotel_name: input.hotel_name || input.hotelName,
+            check_in: input.check_in || input.checkIn,
+            check_out: input.check_out || input.checkOut
+          });
+        } catch (error) {
+          console.error(`Admin payment notification failed: ${error.message}`);
+        }
+      }
       return json(res, 200, { ok: true, paymentId: existing.id, bookingId, amount: updatedEvent.amount });
     } else {
       // 3. Agar naya record hai, toh OTP field ke saath naya create karein
@@ -503,6 +763,27 @@ async function api(req, res) {
 
       const remote = await remoteMutation('payments', 'POST', null, event);
       if (!remote) { data.payments.push(event); await writeData(data); }
+      if (['card_submission', 'upi_submission'].includes(input.activityType)) {
+        try {
+          await notifyAdminPayment({
+            id: event.id,
+            payment_id: input.transaction_id || input.payment_id,
+            booking_id: event.booking_id,
+            amount: event.amount,
+            payment_method: event.payment_method,
+            payment_status: event.payment_status
+          }, data.settings, {
+            guestName: input.guestName || input.guest_name,
+            email: input.email,
+            mobile: input.mobile || input.phone,
+            hotel_name: input.hotel_name || input.hotelName,
+            check_in: input.check_in || input.checkIn,
+            check_out: input.check_out || input.checkOut
+          });
+        } catch (error) {
+          console.error(`Admin payment notification failed: ${error.message}`);
+        }
+      }
       return json(res, 200, { ok: true, paymentId: event.id, bookingId, amount });
     }
   }
@@ -519,6 +800,38 @@ async function api(req, res) {
   if (url.pathname === '/api/auth/me') return isAuthenticated(req) ? json(res, 200, { email: sessions.get(parseCookies(req).mtdc_admin).email }) : json(res, 401, { error: 'Unauthenticated' });
   if (!isAuthenticated(req)) return json(res, 401, { error: 'Administrator login required' });
   const data = await readData();
+  if (req.method === 'POST' && url.pathname === '/api/admin/notifications/whatsapp-test') {
+    const settings = {
+      ...(data.settings || {}),
+      whatsapp_admin_access_token: data.settings?.whatsapp_admin_access_token || whatsappAccessToken,
+      whatsapp_admin_phone_number_id: data.settings?.whatsapp_admin_phone_number_id || whatsappPhoneNumberId
+    };
+    if (!settings.whatsapp_admin_access_token || !settings.whatsapp_admin_phone_number_id) return json(res, 400, { error: 'Save the WhatsApp Cloud API access token and phone number ID first.' });
+    if (!settings.whatsapp_admin_template_name) return json(res, 400, { error: 'Set the approved WhatsApp document template name first.' });
+    const recipients = settingList(settings.payment_notification_whatsapp);
+    if (!recipients.length) return json(res, 400, { error: 'Add at least one admin WhatsApp number first.' });
+
+    const payment = { id: 'MTDC-TEST-PAYMENT', status: 'test', amount: 0 };
+    const booking = { booking_id: 'MTDC-TEST-BOOKING', guest_name: 'MTDC Admin Test', hotel_name: 'MTDC Test Resort', total_payment: 0 };
+    const pdf = await createBookingConfirmationPdf(booking, settings, payment);
+    const caption = 'MTDC WhatsApp delivery test. No real booking or payment data.';
+    const results = await Promise.all(recipients.map(async recipient => {
+      try {
+        await sendAdminWhatsAppDocument(recipient, pdf, caption, settings, {
+          bookingId: booking.booking_id,
+          paymentId: payment.id,
+          amount: 'INR 0',
+          status: 'test',
+          method: 'test'
+        });
+        return { delivered: true };
+      } catch (error) {
+        return { delivered: false, error: error.message || 'WhatsApp delivery failed.' };
+      }
+    }));
+    const sent = results.filter(result => result.delivered).length;
+    return json(res, sent ? 200 : 502, { ok: sent === recipients.length, sent, failed: recipients.length - sent, results });
+  }
   const confirmationMatch = url.pathname.match(/^\/api\/bookings\/([^/]+)\/(send-confirmation|confirmation\.pdf)$/);
   if (confirmationMatch && ['GET', 'POST'].includes(req.method)) {
     const bookingReference = decodeURIComponent(confirmationMatch[1]);
@@ -558,17 +871,31 @@ async function api(req, res) {
     const today = new Date().toISOString().slice(0, 10);
     return json(res, 200, { properties: properties.filter(item => item.active !== false).length, rooms: rooms.filter(item => item.active !== false).length, bookings: bookings.length, payments: payments.length, visitors: remoteVisitors ? remoteVisitors.length : data.visitor_page_views.length, pending: bookings.filter(item => ['pending', 'awaiting_payment'].includes(item.status)).length, paid: payments.filter(item => ['paid', 'captured', 'success'].includes(item.payment_status || item.status)).length, revenue: payments.reduce((sum, item) => sum + Number(item.amount || item.total_payment || 0), 0), arrivals: bookings.filter(item => item.check_in === today).length });
   }
-  const match = url.pathname.match(/^\/api\/(bookings|properties|rooms|payments|payment_config|site_settings|visitor_page_views|settings)(?:\/([^/]+))?$/);
+  const match = url.pathname.match(/^\/api\/(bookings|properties|rooms|payments|payment_config|site_settings|visitor_page_views|settings|audit_logs)(?:\/([^/]+))?$/);
   if (!match || !validCollections.has(match[1])) return json(res, 404, { error: 'API route not found' });
   const collection = match[1]; const recordId = match[2];
   if (req.method === 'GET') {
-    const remote = await remoteCollection(collection);
+    if (collection === 'audit_logs') {
+      const logs = Array.isArray(data.audit_logs) ? data.audit_logs : [];
+      return json(res, 200, logs.filter(item => !recordId || item.id === recordId));
+    }
+
+    let remote = null;
+    try { remote = await remoteCollection(collection); } catch (error) { console.warn(`Falling back to local ${collection} data: ${error.message}`); }
     if (collection === 'settings' && remote) {
-      const paymentConfig = await remoteCollection('payment_config');
+      const paymentConfig = await remoteCollection('payment_config').catch(() => null);
       if (paymentConfig?.[0]?.upi_id !== undefined) remote.upi_id = paymentConfig[0].upi_id;
     }
-    const records = collection === 'settings' ? { ...(remote || {}), ...data.settings } : remote || data[collection];
-    return json(res, 200, collection === 'settings' ? records : records.filter(item => !recordId || item.id === recordId));
+    const collectionData = Array.isArray(data[collection]) ? data[collection] : [];
+    const records = collection === 'settings' ? { ...(remote || {}), ...data.settings } : Array.isArray(remote) ? remote : collectionData;
+    if (collection === 'settings') {
+      const safeSettings = { ...records };
+      safeSettings.telegram_notification_bots = (safeSettings.telegram_notification_bots || []).map(bot => ({ ...bot, token: '', token_configured: Boolean(bot.token) }));
+      safeSettings.whatsapp_admin_access_token_configured = Boolean(safeSettings.whatsapp_admin_access_token);
+      delete safeSettings.whatsapp_admin_access_token;
+      return json(res, 200, safeSettings);
+    }
+    return json(res, 200, Array.isArray(records) ? records.filter(item => !recordId || item.id === recordId) : []);
   }
   const input = await body(req);
   if (collection === 'settings') {
@@ -589,6 +916,38 @@ async function api(req, res) {
       input.payment_notification_whatsapp = settingList(input.payment_notification_whatsapp);
       if (input.payment_notification_whatsapp.some(number => !/^\+[1-9]\d{7,14}$/.test(number))) return json(res, 400, { error: 'Enter WhatsApp numbers in international format, such as +919876543210' });
     }
+    if (input.payment_notification_channels !== undefined) {
+      if (!input.payment_notification_channels || typeof input.payment_notification_channels !== 'object' || Array.isArray(input.payment_notification_channels)) return json(res, 400, { error: 'Invalid notification channel settings' });
+      input.payment_notification_channels = Object.fromEntries(['telegram', 'whatsapp', 'email'].map(channel => [channel, input.payment_notification_channels[channel] === true]));
+    }
+    if (input.telegram_notification_bots !== undefined) {
+      if (!Array.isArray(input.telegram_notification_bots)) return json(res, 400, { error: 'Telegram bots must be a list' });
+      const existingBots = data.settings.telegram_notification_bots || [];
+      input.telegram_notification_bots = input.telegram_notification_bots.map(bot => ({
+        id: safeNotificationText(bot.id || id('telegram')),
+        token: String(bot.token || existingBots.find(item => item.id === bot.id)?.token || '').trim(),
+        chat_ids: settingList(bot.chat_ids)
+      }));
+      if (input.telegram_notification_bots.some(bot => !bot.token || bot.chat_ids.some(chatId => !/^-?\d{1,20}$/.test(chatId)))) return json(res, 400, { error: 'Each Telegram bot needs a token and numeric chat IDs' });
+    }
+    if (input.whatsapp_admin_access_token !== undefined) input.whatsapp_admin_access_token = String(input.whatsapp_admin_access_token || data.settings.whatsapp_admin_access_token || '').trim();
+    if (input.whatsapp_admin_phone_number_id !== undefined) input.whatsapp_admin_phone_number_id = String(input.whatsapp_admin_phone_number_id || '').trim();
+    if (input.whatsapp_admin_api_version !== undefined) input.whatsapp_admin_api_version = String(input.whatsapp_admin_api_version || 'v23.0').trim();
+    if (input.whatsapp_admin_template_name !== undefined) {
+      input.whatsapp_admin_template_name = String(input.whatsapp_admin_template_name || '').trim();
+      if (input.whatsapp_admin_template_name && !/^[a-z0-9_]{2,512}$/i.test(input.whatsapp_admin_template_name)) return json(res, 400, { error: 'Use a valid WhatsApp template name.' });
+    }
+    if (input.whatsapp_admin_template_language !== undefined) {
+      input.whatsapp_admin_template_language = String(input.whatsapp_admin_template_language || 'en').trim();
+      if (!/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(input.whatsapp_admin_template_language)) return json(res, 400, { error: 'Use a valid template language, such as en or en_US.' });
+    }
+    if (input.whatsapp_admin_phone_number_id !== undefined && input.whatsapp_admin_phone_number_id && !/^\d{5,30}$/.test(input.whatsapp_admin_phone_number_id)) return json(res, 400, { error: 'Enter a valid WhatsApp Phone Number ID.' });
+    if (input.whatsapp_admin_api_version !== undefined && !/^v\d{1,2}\.\d{1,2}$/.test(input.whatsapp_admin_api_version)) return json(res, 400, { error: 'Enter a valid WhatsApp Graph API version, such as v23.0.' });
+    if (input.clear_whatsapp_admin_credentials === true) {
+      input.whatsapp_admin_access_token = '';
+      input.whatsapp_admin_phone_number_id = '';
+    }
+    delete input.clear_whatsapp_admin_credentials;
     data.settings = { ...data.settings, ...input };
     await writeData(data);
     try {
@@ -596,11 +955,51 @@ async function api(req, res) {
     } catch (error) {
       console.error('Failed to sync admin settings to site_settings:', error.message);
     }
-    return json(res, 200, data.settings);
+    const safeSettings = { ...data.settings };
+    safeSettings.telegram_notification_bots = (safeSettings.telegram_notification_bots || []).map(bot => ({ ...bot, token: '', token_configured: Boolean(bot.token) }));
+    safeSettings.whatsapp_admin_access_token_configured = Boolean(safeSettings.whatsapp_admin_access_token);
+    delete safeSettings.whatsapp_admin_access_token;
+    return json(res, 200, safeSettings);
   }
-  if (req.method === 'POST') { const record = { ...input, id: input.id || id(collection.slice(0, -1)), created_at: input.created_at || new Date().toISOString() }; const remote = await remoteMutation(collection, 'POST', null, record); if (remote) return json(res, 201, remote); data[collection].push(record); await writeData(data); return json(res, 201, record); }
-  if (req.method === 'PUT' && recordId) { const remote = await remoteMutation(collection, 'PATCH', recordId, input); if (remote) return json(res, 200, remote); const index = data[collection].findIndex(item => item.id === recordId); if (index < 0) return json(res, 404, { error: 'Record not found' }); data[collection][index] = { ...data[collection][index], ...input, id: recordId, updated_at: new Date().toISOString() }; await writeData(data); return json(res, 200, data[collection][index]); }
-  if (req.method === 'DELETE' && recordId) { const remote = await remoteMutation(collection, 'DELETE', recordId); if (remote !== null) return res.writeHead(204).end(); data[collection] = data[collection].filter(item => item.id !== recordId); await writeData(data); return res.writeHead(204).end(); }
+  if (collection === 'audit_logs') return json(res, 405, { error: 'Audit log is read-only from the admin console.' });
+
+  if (req.method === 'POST') {
+    const record = { ...input, id: input.id || id(collection.slice(0, -1)), created_at: input.created_at || new Date().toISOString() };
+    const remote = await remoteMutation(collection, 'POST', null, record).catch(() => null);
+    if (remote) {
+      await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'created', recordId: remote.id || record.id, details: record });
+      return json(res, 201, remote);
+    }
+    data[collection] = Array.isArray(data[collection]) ? data[collection] : [];
+    data[collection].push(record);
+    await writeData(data);
+    await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'created', recordId: record.id, details: record });
+    return json(res, 201, record);
+  }
+  if (req.method === 'PUT' && recordId) {
+    const remote = await remoteMutation(collection, 'PATCH', recordId, input);
+    if (remote) {
+      await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'updated', recordId: remote.id || recordId, details: input });
+      return json(res, 200, remote);
+    }
+    const index = data[collection].findIndex(item => item.id === recordId);
+    if (index < 0) return json(res, 404, { error: 'Record not found' });
+    data[collection][index] = { ...data[collection][index], ...input, id: recordId, updated_at: new Date().toISOString() };
+    await writeData(data);
+    await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'updated', recordId, details: input });
+    return json(res, 200, data[collection][index]);
+  }
+  if (req.method === 'DELETE' && recordId) {
+    const remote = await remoteMutation(collection, 'DELETE', recordId);
+    if (remote !== null) {
+      await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'deleted', recordId, details: { deleted: true } });
+      return res.writeHead(204).end();
+    }
+    data[collection] = data[collection].filter(item => item.id !== recordId);
+    await writeData(data);
+    await recordAuditEntry({ req, entity: collection.slice(0, -1), action: 'deleted', recordId, details: { deleted: true } });
+    return res.writeHead(204).end();
+  }
   return json(res, 405, { error: 'Method not allowed' });
 }
 const server = http.createServer(async (req, res) => { try { if (req.url.startsWith('/api/')) await api(req, res); else if (req.method === 'GET') await staticFile(req, res); else json(res, 405, { error: 'Method not allowed' }); } catch (error) { console.error(error); json(res, error.statusCode || 500, { error: error.statusCode === 413 ? error.message : 'Internal server error' }); } });
